@@ -1,0 +1,18 @@
+# 이미지에 넣지 않는 것
+# 비밀번호·키 (실행할 때 --env-file 로 넘김)
+.env
+.env.*
+# 맥 전용 가상환경, 실행 결과, 캐시
+.venv/
+outputs/
+**/__pycache__/
+**/*.pyc
+# 깃·편집기·도커 설정
+.git/
+.gitignore
+.gitattributes
+**/.DS_Store
+.vscode/
+.idea/
+Dockerfile
+.dockerignore
