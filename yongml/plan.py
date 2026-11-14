@@ -3,7 +3,9 @@
 
 투입 수단  행정동별 AI 카드의 '추천 1' 그대로 (ml_explanation). 서버가 정한 추천·제외를 바꾸지 않음
            (동 지역은 AI 카드에서 행복택시가 이미 제외라서 추천 1 로 나오지 않음)
-후보       교통 취약지역(종합 취약도 config.VULNERABLE_SCORE 점 이상)인 행정동 중
+후보       종합 취약도 순위(rank_total) TOP CANDIDATE_TOP(15) 안의 행정동 중 (같은 점수는 같이 포함)
+           (대시보드 '교통 취약지역'(50점 이상)과는 따로. 50점 기준은 외곽 읍·면만 남아 수단이 똑버스 하나뿐이라
+            15위까지 넓혀 외곽 위주는 유지하면서 노선버스도 들어올 수 있게)
            - 추천 1 이 '현행 유지'면 제외
            - 추천 1 이 똑버스인데 ML 결과가 '지금 운영: 예'면 새로 드는 돈이 없어 제외
              (노선버스는 증차, 행복택시는 운영 중이면 실제 지원금으로 계산하므로 제외하지 않음)
@@ -31,6 +33,7 @@ from . import io_db
 from .errors import JobError
 
 # ============================== 단가·예산·대수 기준 (바꾸면 run_plan.py 를 다시 돌리면 됨) ==============================
+CANDIDATE_TOP = 15                 # 후보: 행정동 종합 취약도 순위 이 안 (같은 점수는 같이 포함)
 DAYS = 61                          # 2개월
 COST_DAY = {                       # 1대 1일 운영비 (원)
     "CITY_BUS": 809_181,           # 시내버스: 광주광역시 2025 대형 1일 대당 표준운송원가 (경기도 미공개라 대용)
@@ -191,6 +194,7 @@ def one_period(p, year, D, cinfo, happy_avg2):
     if pri.empty:
         raise JobError("E_NO_DATA", f"ml_priority {p} 없음 (run_all.py 먼저)")
     sc = pri.set_index(pri["region_cd"].astype(str))["score_total"]
+    rk = pd.to_numeric(pri.set_index(pri["region_cd"].astype(str))["rank_total"], errors="coerce")
     pk = picks(D["exp"], D["su"], month)
     reg = D["reg"]
     has_bus = dict(zip(reg["dong_cd"], pd.to_numeric(reg["n_stops"], errors="coerce").fillna(0) > 0))
@@ -199,10 +203,12 @@ def one_period(p, year, D, cinfo, happy_avg2):
     for r in reg.itertuples():
         cd = r.dong_cd
         score = float(sc.get(cd, np.nan))
+        rank = float(rk.get(cd, np.nan))
         mode, cur = pk.get(cd, (None, False))
         u, cost, action, basis, vnote = cost_of(mode, cinfo[cd], happy_avg2, has_bus.get(cd, False))
-        if np.isnan(score) or score < config.VULNERABLE_SCORE:
-            status, note = "후보 아님", f"교통 취약지역 아님 (종합 취약도 {score:.1f}점, 기준 {config.VULNERABLE_SCORE}점)"
+        if np.isnan(rank) or rank > CANDIDATE_TOP:
+            status, note = "후보 아님", (f"종합 취약도 TOP {CANDIDATE_TOP} 밖 ({int(rank)}위, {score:.1f}점)"
+                                       if not np.isnan(rank) else "종합 취약도 결과 없음")
         elif mode == "KEEP":
             status, note = "현행 유지", "AI 추천이 현행 유지"
         elif mode == "DRT" and cur:
